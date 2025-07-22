@@ -226,7 +226,8 @@ def main():
     print(f"🌪️  Starting hurricane simulation ({args.duration}s @ {args.interval}s intervals)...")
     mqtt_pub.publish_clear()
 
-    for step in range(total_steps + 1):
+    step = 0
+    while True:
         timestamp = step * args.interval
         for hurricane in hurricanes:
             hurricane.update_position(step, total_steps)
@@ -234,7 +235,11 @@ def main():
             hurricane.generate_and_publish_features(timestamp)
         time.sleep(args.interval)
 
-    print("✅ Simulation complete.")
+        step += 1
+        if step > total_steps:
+            step = 0
+            print("🔄 Restarting simulation loop")
+            mqtt_pub.publish_clear()
 
 
 if __name__ == "__main__":
