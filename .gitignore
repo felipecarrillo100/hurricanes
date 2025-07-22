@@ -1,0 +1,80 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyInstaller
+*.spec
+dist/
+build/
+
+# Setup logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+coverage.xml
+.cache
+.pytest_cache/
+
+# Pyre type checker
+.pyre/
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Local config files
+*.env
+.env.*
+
+# Wheel files
+*.egg
+*.egg-info/
+dist/
+*.whl
+
+# Installer artifacts
+*.manifest
+*.spec
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
