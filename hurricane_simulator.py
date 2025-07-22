@@ -14,20 +14,12 @@ def km_to_deg(km, latitude):
     return dlat, dlon
 
 
-# New: Smoother wind field using quadrant-based interpolation
 def create_asymmetric_wind_field(lat, lon, base_radius_km):
     quadrant_factors = {
         "NE": 1.2,
         "SE": 1.0,
         "SW": 0.8,
         "NW": 1.0,
-    }
-
-    quadrant_angles = {
-        "NE": (0, 90),
-        "SE": (90, 180),
-        "SW": (180, 270),
-        "NW": (270, 360),
     }
 
     def get_quadrant_factor(angle_deg):
@@ -102,45 +94,61 @@ class MqttPublisher:
         self.client.connect(broker, port)
         self.client.loop_start()
 
-    def publish_polygon(self, level_id, geojson_feature):
-        topic = f"producers/hurricane/data/{level_id}"
+    def publish_polygon(self, name, level_id, geojson_feature):
+        topic = f"producers/hurricane/data/{name}/{level_id}"
         message = {
             "action": "PUT",
             "geometry": geojson_feature["geometry"],
             "id": geojson_feature["id"],
             "properties": geojson_feature["properties"],
         }
-        self.client.publish(topic, json.dumps(message))
+        payload = json.dumps(message)
+        print(f"Publishing to {topic}: {payload}")
+        result, mid = self.client.publish(topic, payload)
+        if result != 0:
+            print(f"⚠️ Failed to publish message to {topic}")
 
-    def publish_delete(self, level_id):
-        topic = f"producers/hurricane/data/{level_id}"
+    def publish_delete(self, name, level_id):
+        topic = f"producers/hurricane/data/{name}/{level_id}"
         message = {
             "action": "DELETE",
             "id": level_id
         }
-        self.client.publish(topic, json.dumps(message))
+        payload = json.dumps(message)
+        print(f"Publishing DELETE to {topic}: {payload}")
+        result, mid = self.client.publish(topic, payload)
+        if result != 0:
+            print(f"⚠️ Failed to publish DELETE message to {topic}")
 
     def publish_clear(self):
         topic = f"producers/hurricane/control"
         message = {
             "action": "CLEAR"
         }
-        self.client.publish(topic, json.dumps(message))
+        payload = json.dumps(message)
+        print(f"Publishing CLEAR to {topic}: {payload}")
+        result, mid = self.client.publish(topic, payload)
+        if result != 0:
+            print(f"⚠️ Failed to publish CLEAR message to {topic}")
+
 
 class Hurricane:
-    def __init__(self, mqtt_publisher):
-        self.lat = 15.0
-        self.lon = -70.0
+    def __init__(self, name, mqtt_publisher, lat_start, lon_start, lat_end, lon_end):
+        self.name = name
+        self.lat = lat_start
+        self.lon = lon_start
+        self.lat_start = lat_start
+        self.lon_start = lon_start
+        self.lat_end = lat_end
+        self.lon_end = lon_end
         self.wind_speed = 50.0
         self.pressure = 1005.0
         self.active_levels = set()
         self.mqtt_publisher = mqtt_publisher
 
     def update_position(self, t, total_steps):
-        lat_start, lon_start = 15.0, -70.0
-        lat_end, lon_end = 28.5, -80.0
-        self.lat = lat_start + (lat_end - lat_start) * (t / total_steps)
-        self.lon = lon_start + (lon_end - lon_start) * (t / total_steps)
+        self.lat = self.lat_start + (self.lat_end - self.lat_start) * (t / total_steps)
+        self.lon = self.lon_start + (self.lon_end - self.lon_start) * (t / total_steps)
 
     def fluctuate(self):
         self.wind_speed += random.uniform(-2.5, 3.5)
@@ -152,16 +160,19 @@ class Hurricane:
     def generate_and_publish_features(self, timestamp):
         category = get_category(self.wind_speed)
         current_levels = set()
+        initial = self.name[0].upper()  # First letter of hurricane name
 
-        print(f"[{timestamp}s] Wind: {self.wind_speed:.1f} mph, Cat {category}, Pos: ({self.lat:.2f}, {self.lon:.2f})")
+        print(f"[{timestamp}s] {self.name} Wind: {self.wind_speed:.1f} mph, Cat {category}, Pos: ({self.lat:.2f}, {self.lon:.2f})")
 
         for level in WIND_LEVELS:
             if self.wind_speed >= level["min"]:
                 radius_km = compute_dynamic_radius(level["base_radius"], self.wind_speed)
                 polygon = create_asymmetric_wind_field(self.lat, self.lon, radius_km)
+                level_num = int(level["level"][1])  # e.g. "L5" -> 5
+                unique_id = f"{level['level']}_{initial}{level_num}"
                 feature = {
                     "type": "Feature",
-                    "id": level["level"],
+                    "id": unique_id,
                     "geometry": polygon,
                     "properties": {
                         "wind_level": level["level"],
@@ -175,13 +186,14 @@ class Hurricane:
                         "timestamp": timestamp,
                     },
                 }
+                targetTopic = level["level"] + "/" + unique_id
                 current_levels.add(level["level"])
-                self.mqtt_publisher.publish_polygon(level["level"], feature)
+                self.mqtt_publisher.publish_polygon(self.name, targetTopic, feature)
 
         for prev in self.active_levels:
             if prev not in current_levels:
-                print(f"🛑 Wind level {prev} ceased at t={timestamp}s — sending DELETE")
-                self.mqtt_publisher.publish_delete(prev)
+                print(f"🛑 {self.name} Wind level {prev} ceased at t={timestamp}s — sending DELETE")
+                self.mqtt_publisher.publish_delete(self.name, prev)
 
         self.active_levels = current_levels
 
@@ -203,7 +215,11 @@ def main():
         username=args.username,
         password=args.password,
     )
-    hurricane = Hurricane(mqtt_pub)
+
+    hurricanes = [
+        Hurricane("Marie", mqtt_pub, 10.0, -60.0, 20.5, -90.0),
+        Hurricane("Jane", mqtt_pub, 16.0, -71.0, 29.0, -81.0),
+    ]
 
     total_steps = args.duration // args.interval
 
@@ -212,9 +228,10 @@ def main():
 
     for step in range(total_steps + 1):
         timestamp = step * args.interval
-        hurricane.update_position(step, total_steps)
-        hurricane.fluctuate()
-        hurricane.generate_and_publish_features(timestamp)
+        for hurricane in hurricanes:
+            hurricane.update_position(step, total_steps)
+            hurricane.fluctuate()
+            hurricane.generate_and_publish_features(timestamp)
         time.sleep(args.interval)
 
     print("✅ Simulation complete.")
