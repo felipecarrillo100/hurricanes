@@ -46,8 +46,11 @@ coverage.xml
 # VS Code
 .vscode/
 
-# PyCharm
+# PyCharm / IntelliJ IDEA
 .idea/
+*.iml
+*.iws
+out/
 
 # macOS
 .DS_Store
